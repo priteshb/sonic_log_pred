@@ -16,6 +16,16 @@ file_list += [file for file in os.listdir(os.curdir) if file.endswith(".las")]
 missing_value = [-9999.25]
 mnemonics = []
 response_var = 'DTSM'
+res_lags = [3, 4, 5] #in ft
+gr_lags = [2, 3, 4]
+nphi_lags = [3, 4, 5]
+rhob_lags = [2, 3]
+dtco_lags = [5, 6, 7]
+res_win = [4]
+gr_win = [3]
+nphi_win = [4]
+dtco_win = [6]
+rhob_win = [3]
 log_mapping = pd.read_excel("Logs_Mapping.xlsx", sheet_name="Distinct mnemonics")
 
 
@@ -76,19 +86,68 @@ def log_renaming_shortlisting(df, log_map, response_var):
 
 
 def remove_high_missing_columns(file, df, thresh):
-    # print(file, df.columns[df.isnull().mean() > thresh])
-    return df[df.columns[df.isnull().mean() < thresh]]
-    
+    print(df.isnull().mean())
+    return df.columns[df.isnull().mean() < thresh]
+
+
+def create_lag_features(df, param, lags=None, wins=None):
+    lag_cols = [param + "_lag_" + str(lag) for lag in lags]
+    for lag, lag_col in zip(lags, lag_cols):
+        df[lag_col] = df[param].shift(2*lag)
+        print(f'created lag {lag} for {param}')
+
+    for win in wins:
+        for lag, lag_col in zip(lags, lag_cols):
+            df[param + "_rmean_" + str(lag) + "_" + 
+                str(win)] = df[lag_col].transform(lambda x: x.rolling(2*win).mean())
+            print(f'created rolling win {win} for lag {lag} for {param}')
+
+    print(df.shape)
+
+    return df
+
+
+lgb_params = {
+    #     'nfold': 5,
+    'boosting_type': 'gbdt',
+    'metric': 'rmse',
+    #     'objective': 'regression',
+    'objective': 'poisson',
+    #     'objective': 'tweedie',
+    #     'tweedie_variance_power': 1.1,
+    "force_row_wise": True,
+    'n_jobs': -1,
+    'seed': 236,
+    'learning_rate': 0.075,
+    'feature_fraction': 0.5,
+    #     "sub_feature" : 0.8,
+    #     "sub_row" : 0.75,
+    "lambda_l2": 0.1,
+    'bagging_fraction': 0.75,
+    'bagging_freq': 1,
+    'colsample_bytree': 0.75,
+    'num_leaves': 2 ** 7 - 1,
+    "min_data_in_leaf": 2 ** 8 - 1,
+    'verbosity': 1,
+    'num_boost_round': 600,
+    #     'num_iterations' : 1200,
+    'n_estimators': 2000,
+    'device': 'gpu',
+    'gpu_platform_id': 2,
+    'gpu_device_id': 1
+}
+
 
 
 mnemonics_df = pd.DataFrame(columns=['FILE', 'LOG', 'UNIT', 'DESC', 'COUNT', 
                                      'MEAN', 'STD', 'MIN', '25%', '50%', '75%', 
                                      'MAX', 'MISSINGNESS'])
+inputlas = {}
 
 #Read files and get log stats in dataframe
 for file in file_list:
-    file = '00a60e5cc262_TGS.las'
-    inputlas = lasio.read(file) #Read file
+    file = '1a000e7f474b_TGS.las'
+    inputlas[file] = lasio.read(file) #Read file
     print(file)
     df = inputlas.df() #Convert data to dataframe
     df = df.rename_axis("DEPT").reset_index() #Create depth axis and reset index
@@ -96,26 +155,40 @@ for file in file_list:
     df = df.dropna(subset=['DTSM'])
     des = pd.DataFrame(df.describe()) #Get data stats
     
-    for curves in inputlas.curves:
-        # if 'SFL' in curves.mnemonic:
-        # print(file)
-        # if curves.mnemonic not in mnemonics:
-            # print(curves.mnemonic)
-        curv_desc = [file, curves.mnemonic, curves.unit, curves.descr]
-        curv_stats = list(des.loc[:, curves.mnemonic].values)
-        missingness = 100*df[curves.mnemonic].isnull().sum()/len(df)
-        curv_desc.extend(curv_stats)
-        curv_desc.extend([missingness])
-        temp_df = pd.DataFrame([curv_desc], 
-                               columns=['FILE', 'LOG', 'UNIT', 'DESC', 'COUNT', 
-                                        'MEAN', 'STD', 'MIN', '25%', '50%', 
-                                        '75%', 'MAX', 'MISSINGNESS'])
-        temp_df = temp_df[temp_df['COUNT'] > 0]
-        mnemonics_df = mnemonics_df.append(temp_df)  
+    # for curves in inputlas.curves:
+    #     # if 'SFL' in curves.mnemonic:
+    #     # print(file)
+    #     # if curves.mnemonic not in mnemonics:
+    #         # print(curves.mnemonic)
+    #     curv_desc = [file, curves.mnemonic, curves.unit, curves.descr]
+    #     curv_stats = list(des.loc[:, curves.mnemonic].values)
+    #     missingness = 100*df[curves.mnemonic].isnull().mean()
+    #     curv_desc.extend(curv_stats)
+    #     curv_desc.extend([missingness])
+    #     temp_df = pd.DataFrame([curv_desc], 
+    #                            columns=['FILE', 'LOG', 'UNIT', 'DESC', 'COUNT', 
+    #                                     'MEAN', 'STD', 'MIN', '25%', '50%', 
+    #                                     '75%', 'MAX', 'MISSINGNESS'])
+    #     temp_df = temp_df[temp_df['COUNT'] > 0]
+    #     mnemonics_df = mnemonics_df.append(temp_df)  
         
     df = df.dropna(axis=1, how='all')
     df = log_renaming_shortlisting(df, log_mapping, response_var)
-    df = remove_high_missing_columns(file, df, 0.05)
+    cols_low_missingness = remove_high_missing_columns(file, df, 0.2)
+    df = df[['DEPTH', 'RESD', 'RESM', 'DTCO', 'DTSM', 'NPHI', 'RHOB', 'GR']]
+    df = create_lag_features(df, 'RESD', lags=res_lags, wins=res_win)
+    df = create_lag_features(df, 'RESM', lags=res_lags, wins=res_win)
+    df = create_lag_features(df, 'GR', lags=gr_lags, wins=gr_win)
+    df = create_lag_features(df, 'NPHI', lags=nphi_lags, wins=nphi_win)
+    df = create_lag_features(df, 'RHOB', lags=rhob_lags, wins=rhob_win)
+    df = create_lag_features(df, 'DTCO', lags=dtco_lags, wins=dtco_win)
+    df = df.fillna(method='ffill')
+    df = df.fillna(method='bfill')
+    
+    
+    
+    
+    
     
     
 m = 100*df.isnull().sum()/len(df)
