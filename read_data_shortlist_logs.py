@@ -24,11 +24,11 @@ response_var = "DTSM"
 pred_var = ["RESD", "RESM", "DTCO", "DTSM", "NPHI", "RHOB", "GR"]
 nonneg_vars = ["RESD", "RESM", "DTCO", "DTSM", "RHOB", "GR"]
 thresh = 0.2
-res_lags = [3, 4, 5]  # in ft
-gr_lags = [2, 3, 4]
-nphi_lags = [3, 4, 5]
-rhob_lags = [2, 3]
-dtco_lags = [5, 6, 7]
+res_lags = [1, 2, 3, 4, 5, 6]  # in ft
+gr_lags = [1, 2, 3, 4]
+nphi_lags = [1, 2, 3, 4, 5]
+rhob_lags = [1, 2, 3]
+dtco_lags = [3, 4, 5, 6, 7]
 res_win = [4]
 gr_win = [3]
 nphi_win = [4]
@@ -172,7 +172,7 @@ for file in file_list:
     #     temp_df = temp_df[temp_df['COUNT'] > 0]
     #     mnemonics_df = mnemonics_df.append(temp_df)
 
-    df = df.dropna(axis=1, how="all")
+    df = df.dropna(axis=1, how="any")
     df = log_renaming_shortlisting(df, log_mapping, response_var)
     if all(x in df.columns for x in pred_var):
         cols_low_missingness = remove_high_missing_columns(file, df, 0.2)
@@ -195,7 +195,7 @@ x = np.asarray(train_df.loc[:, train_df.columns != response_var])
 y = np.asarray(train_df[response_var])
 
 train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.3)
-xgb_r = xg.XGBRegressor(objective="reg:squarederror", n_estimators=1000)
+xgb_r = xg.XGBRegressor(objective="reg:squarederror", n_estimators=100)
 xgb_r.fit(train_x, train_y)
 pred = xgb_r.predict(test_x)
 rmse = np.sqrt(MSE(test_y, pred))
