@@ -19,7 +19,6 @@ df_pickle_fn = "df.pkl"
 
 
 missing_value = [-9999.25]
-mnemonics = []
 response_var = "DTSM"
 pred_var = ["RESD", "RESM", "DTCO", "DTSM", "NPHI", "RHOB", "GR"]
 nonneg_vars = ["RESD", "RESM", "DTCO", "DTSM", "RHOB", "GR"]
