@@ -3,36 +3,55 @@
 SPE GCS Competition
 """
 
-import lasio, os, collections, pickle
+import config as cnfg
+import utils as ut
+import lasio
+import os
+# import collections
+# import pickle
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error as MSE
+# from sklearn.preprocessing import MinMaxScaler
+# from sklearn.compose import ColumnTransformer
+# from sklearn.preprocessing import PowerTransformer
+# from sklearn.experimental import enable_iterative_imputer
+# from sklearn.impute import IterativeImputer
 import xgboost as xg
+
+# from sklearn.ensemble import IsolationForest
+# from sklearn.covariance import EllipticEnvelope
+# from sklearn.neighbors import LocalOutlierFactor
+# from sklearn.svm import OneClassSVM
 
 pd.set_option("max_columns", None)
 
 file_list = []
 file_list += [file for file in os.listdir(os.curdir) if file.endswith(".las")]
-df_pickle_fn = "df.pkl"
+df_pickle_fn_norm = cnfg.df_pickle_fn_norm
+df_pickle_fn = cnfg.df_pickle_fn
+df_pickle_fn_pt = cnfg.df_pickle_fn_pt
 
-
-missing_value = [-9999.25]
-response_var = "DTSM"
-pred_var = ["RESD", "RESM", "DTCO", "DTSM", "NPHI", "RHOB", "GR"]
-nonneg_vars = ["RESD", "RESM", "DTCO", "DTSM", "RHOB", "GR"]
-thresh = 0.2
-res_lags = [1, 2, 3, 4, 5, 6]  # in ft
-gr_lags = [1, 2, 3, 4]
-nphi_lags = [1, 2, 3, 4, 5]
-rhob_lags = [1, 2, 3]
-dtco_lags = [3, 4, 5, 6, 7]
-res_win = [4]
-gr_win = [3]
-nphi_win = [4]
-dtco_win = [6]
-rhob_win = [3]
+missing_value = cnfg.missing_value
+missingness_thresh = cnfg.missingness_thresh
+vars_to_use = cnfg.vars_to_use
+response_var = cnfg.response_var
+pred_vars = cnfg.pred_vars
+nonneg_vars = cnfg.nonneg_vars
+thresh = cnfg.thresh
+res_lags = cnfg.res_lags
+gr_lags = cnfg.gr_lags
+nphi_lags = cnfg.nphi_lags
+rhob_lags = cnfg.rhob_lags
+dtco_lags = cnfg.dtco_lags
+res_win = cnfg.res_win
+gr_win = cnfg.gr_win
+nphi_win = cnfg.nphi_win
+dtco_win = cnfg.dtco_win
+rhob_win = cnfg.rhob_win
 
 log_mapping = pd.read_excel("Logs_Mapping.xlsx", sheet_name="Distinct mnemonics")
 
@@ -51,103 +70,36 @@ log_mapping = pd.read_excel("Logs_Mapping.xlsx", sheet_name="Distinct mnemonics"
 # plt.show()
 
 
-# Identify the best log in a dict
-def find_best_logs(df, log_dict, response_var):
-    for k, v in log_dict.items():
-        if len(v) > 1:
-            corr = df[v].corrwith(df[response_var])
-            best_log = corr.idxmax()
-            log_dict[k] = [best_log]
+# mnemonics_df = pd.DataFrame(
+#     columns=[
+#         "FILE",
+#         "LOG",
+#         "UNIT",
+#         "DESC",
+#         "COUNT",
+#         "MEAN",
+#         "STD",
+#         "MIN",
+#         "25%",
+#         "50%",
+#         "75%",
+#         "MAX",
+#         "MISSINGNESS",
+#     ]
+# )
 
-    return log_dict
-
-
-# Identify which logs have multiple mappings in a dict
-def identify_duplicate_log(log_dict):
-    ret_dict = collections.defaultdict(list)
-    for k, v in log_dict.items():
-        ret_dict[v[0]].append(k)
-
-    return ret_dict
-
-
-# Rename and shortlist logs
-def log_renaming_shortlisting(df, log_map, response_var):
-    # df_new = pd.DataFrame()
-    col_maps = {}
-    try:
-        for col in df.columns:
-            new_col = log_map.loc[log_map["LOG"] == col, "CATEGORY"].values
-            if pd.notna(new_col):
-                col_maps[col] = new_col
-
-        col_maps = identify_duplicate_log(col_maps)
-        col_maps = find_best_logs(df, col_maps, response_var)
-        col_maps = {v[0]: k for k, v in col_maps.items()}
-        df = df[df.columns.intersection(list(col_maps.keys()))]
-        df = df.rename(columns=col_maps)
-
-    except Exception as e:
-        print(e)
-
-    return df
-
-
-def remove_high_missing_columns(file, df, thresh):
-    print(df.isnull().mean())
-    return df.columns[df.isnull().mean() < thresh]
-
-def remove_negatives(df, cols):
-    print(df.shape)
-    df = df[df[cols] > 0]
-    print(df.shape)
-    return df
-
-
-def create_lag_features(df, param, lags=None, wins=None):
-    lag_cols = [param + "_lag_" + str(lag) for lag in lags]
-    for lag, lag_col in zip(lags, lag_cols):
-        df[lag_col] = df[param].shift(2 * lag)
-        print(f"created lag {lag} for {param}")
-
-    for win in wins:
-        for lag, lag_col in zip(lags, lag_cols):
-            df[param + "_rmean_" + str(lag) + "_" + str(win)] = df[lag_col].transform(
-                lambda x: x.rolling(2 * win).mean()
-            )
-            print(f"created rolling win {win} for lag {lag} for {param}")
-
-    print(df.shape)
-
-    return df
-
-
-mnemonics_df = pd.DataFrame(
-    columns=[
-        "FILE",
-        "LOG",
-        "UNIT",
-        "DESC",
-        "COUNT",
-        "MEAN",
-        "STD",
-        "MIN",
-        "25%",
-        "50%",
-        "75%",
-        "MAX",
-        "MISSINGNESS",
-    ]
-)
 train_df = pd.DataFrame()
 inputlas = {}
 
-
 # Read files and get log stats in dataframe
 for file in file_list:
-    # file = '1a000e7f474b_TGS.las'
+    # file = '0e121cce5c23_TGS.las'
+    # file = '1cf78b7ca1cc_TGS.las'
+    # file = '4bc281e7f645_TGS.las'
+    # file = '70a049901d0c_TGS.las'
     inputlas[file] = lasio.read(file)  # Read file
     print(file)
+
     df = inputlas[file].df()  # Convert data to dataframe
     df = df.rename_axis("DEPT").reset_index()  # Create depth axis and reset index
     df = df.replace(missing_value, "")  # Convert missing value validationt o null
@@ -171,36 +123,70 @@ for file in file_list:
     #     temp_df = temp_df[temp_df['COUNT'] > 0]
     #     mnemonics_df = mnemonics_df.append(temp_df)
 
-    df = df.dropna(axis=1, how="any")
-    df = log_renaming_shortlisting(df, log_mapping, response_var)
-    if all(x in df.columns for x in pred_var):
-        cols_low_missingness = remove_high_missing_columns(file, df, 0.2)
+    df = df.dropna(axis=1, how="all")
+    df = ut.log_renaming_shortlisting(df, log_mapping, response_var)
+    if all(x in df.columns for x in vars_to_use):
+        df = df[vars_to_use]
+        df, high_missing_cols = ut.impute_missing_data(df, missingness_thresh)
+        if len(high_missing_cols) > 0:
+            df = df.dropna(axis=1, how="any")
+        if len(df.columns) == len(vars_to_use):
+            df = df[df["RESD"] > 0] #remove negative resistivities
+            df = df[df["RESM"] > 0]
+            df[df[nonneg_vars] < 0] = 0 # remove negative values 
+            # df = ut.outlier_detection(df)
+            df = ut.convert_res_to_log(df)
+            # df = ut.normalize_cols(df)
+            df = ut.outlier_detection(df)
 
-        df = df[pred_var]
-        df = remove_negatives(df, nonneg_vars)
-        df = create_lag_features(df, "RESD", lags=res_lags, wins=res_win)
-        df = create_lag_features(df, "RESM", lags=res_lags, wins=res_win)
-        df = create_lag_features(df, "GR", lags=gr_lags, wins=gr_win)
-        df = create_lag_features(df, "NPHI", lags=nphi_lags, wins=nphi_win)
-        df = create_lag_features(df, "RHOB", lags=rhob_lags, wins=rhob_win)
-        df = create_lag_features(df, "DTCO", lags=dtco_lags, wins=dtco_win)
+            # sns.pairplot(df, vars=vars_to_use, diag_kind='kde',
+            #              plot_kws = {'alpha': 0.6, 's': 30, 'edgecolor': 'k'})
+            # df, scaler = normalize_cols(df)
 
-        print(f"Appending {file} to main df")
-        train_df = train_df.append(df)
+            df = ut.create_lag_features(df, "RESD", lags=res_lags, wins=res_win)
+            df = ut.create_lag_features(df, "RESM", lags=res_lags, wins=res_win)
+            df = ut.create_lag_features(df, "GR", lags=gr_lags, wins=gr_win)
+            df = ut.create_lag_features(df, "NPHI", lags=nphi_lags, wins=nphi_win)
+            df = ut.create_lag_features(df, "RHOB", lags=rhob_lags, wins=rhob_win)
+            df = ut.create_lag_features(df, "DTCO", lags=dtco_lags, wins=dtco_win)
+            df = df.dropna(axis=0, how="any")
 
+            print(f"Appending {file} to main df")
+            train_df = train_df.append(df)
+            print(train_df.shape)
+     
+        
 train_df.to_pickle(df_pickle_fn)
+train_df_norm, scaler = ut.normalize_cols(train_df)
+# train_df_norm, scaler = ut.powertransform_cols(train_df)
+# train_df_norm.to_pickle(df_pickle_fn_pt)
+# train_df_norm = train_df
+train_df_norm.to_pickle(df_pickle_fn_norm)
 
-x = np.asarray(train_df.loc[:, train_df.columns != response_var])
-y = np.asarray(train_df[response_var])
+# train_df_norm = pd.read_pickle(df_pickle_fn)
 
-train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.3)
+#Train and test data division
+x = np.asarray(train_df_norm.loc[:, train_df_norm.columns != response_var])
+y = np.asarray(train_df_norm[response_var])
+
+train_x, test_x, train_y, test_y = train_test_split(
+    x, y, test_size=0.3, random_state=11
+)
+
+
+# XG Boost
 xgb_r = xg.XGBRegressor(objective="reg:squarederror", n_estimators=100)
 xgb_r.fit(train_x, train_y)
 pred = xgb_r.predict(test_x)
+
+test_y = ut.invTransform(scaler, test_y, "DTSM", train_df_norm.columns)
+pred = ut.invTransform(scaler, pred, "DTSM", train_df_norm.columns)
+
 rmse = np.sqrt(MSE(test_y, pred))
 rmse
 xgb_r.feature_importances_
 
+# Light GBM
 import lightgbm as lgb
 
 lgb_params = {
@@ -234,13 +220,13 @@ lgb_params = {
 }
 
 train_data = lgb.Dataset(
-    train_df.loc[:, train_df.columns != response_var], label=train_df[response_var]
+    train_df.loc[:, train_df_norm.columns != response_var], label=train_df[response_var]
 )
 
 m_lgb = lgb.train(lgb_params, train_data)
 
 
-mnemonics_df.to_excel("Mnemonics_wth_file_with_stats_DTSM_length.xlsx")
+# mnemonics_df.to_excel("Mnemonics_wth_file_with_stats_DTSM_length.xlsx")
 
 
 # def log_plot(logs):
