@@ -28,24 +28,6 @@ from sklearn.covariance import EllipticEnvelope
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.svm import OneClassSVM
 
-# missing_value = cnfg.missing_value
-# missingness_thresh = cnfg.missingness_thresh
-# vars_to_use = cnfg.vars_to_use
-# response_var = cnfg.response_var
-# pred_vars = cnfg.pred_vars
-# nonneg_vars = cnfg.nonneg_vars
-# thresh = cnfg.thresh
-# res_lags = cnfg.res_lags
-# gr_lags = cnfg.gr_lags
-# nphi_lags = cnfg.nphi_lags
-# rhob_lags = cnfg.rhob_lags
-# dtco_lags = cnfg.dtco_lags
-# res_win = cnfg.res_win
-# gr_win = cnfg.gr_win
-# nphi_win = cnfg.nphi_win
-# dtco_win = cnfg.dtco_win
-# rhob_win = cnfg.rhob_win
-
 
 # Identify the best log in a dict
 def find_best_logs(df, log_dict, response_var):
@@ -146,6 +128,13 @@ def normalize_cols(df):
     # transformed_data = pd.DataFrame(transformed_data, columns=pred_vars)
 
     return normalized_data, scaler
+
+def normalize_test(df, scalar):
+    cols = df.columns
+    normalized_data = scalar.fit_transform(df)
+    normalized_data = pd.DataFrame(normalized_data, columns=cols)
+
+    return normalized_data
 
 
 def powertransform_cols(df):

@@ -7,6 +7,7 @@ import config as cnfg
 import utils as ut
 import lasio
 import os
+import joblib
 # import collections
 # import pickle
 import pandas as pd
@@ -15,25 +16,18 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error as MSE
-# from sklearn.preprocessing import MinMaxScaler
-# from sklearn.compose import ColumnTransformer
-# from sklearn.preprocessing import PowerTransformer
-# from sklearn.experimental import enable_iterative_imputer
-# from sklearn.impute import IterativeImputer
 import xgboost as xg
-
-# from sklearn.ensemble import IsolationForest
-# from sklearn.covariance import EllipticEnvelope
-# from sklearn.neighbors import LocalOutlierFactor
-# from sklearn.svm import OneClassSVM
 
 pd.set_option("max_columns", None)
 
 file_list = []
-file_list += [file for file in os.listdir(os.curdir) if file.endswith(".las")]
+file_list += [file for file in os.listdir(os.curdir+'/train_data') 
+              if file.endswith(".las")]
 df_pickle_fn_norm = cnfg.df_pickle_fn_norm
 df_pickle_fn = cnfg.df_pickle_fn
 df_pickle_fn_pt = cnfg.df_pickle_fn_pt
+scaler_fn = cnfg.scaler_fn
+model_fn = cnfg.model_fn
 
 missing_value = cnfg.missing_value
 missingness_thresh = cnfg.missingness_thresh
@@ -139,10 +133,6 @@ for file in file_list:
             # df = ut.normalize_cols(df)
             df = ut.outlier_detection(df)
 
-            # sns.pairplot(df, vars=vars_to_use, diag_kind='kde',
-            #              plot_kws = {'alpha': 0.6, 's': 30, 'edgecolor': 'k'})
-            # df, scaler = normalize_cols(df)
-
             df = ut.create_lag_features(df, "RESD", lags=res_lags, wins=res_win)
             df = ut.create_lag_features(df, "RESM", lags=res_lags, wins=res_win)
             df = ut.create_lag_features(df, "GR", lags=gr_lags, wins=gr_win)
@@ -155,9 +145,12 @@ for file in file_list:
             train_df = train_df.append(df)
             print(train_df.shape)
      
-        
+# sns.pairplot(train_df, vars=vars_to_use, diag_kind='kde',
+#              plot_kws = {'alpha': 0.6, 's': 30, 'edgecolor': 'k'})
+
 train_df.to_pickle(df_pickle_fn)
 train_df_norm, scaler = ut.normalize_cols(train_df)
+joblib.dump(scaler, scaler_fn) 
 # train_df_norm, scaler = ut.powertransform_cols(train_df)
 # train_df_norm.to_pickle(df_pickle_fn_pt)
 # train_df_norm = train_df
@@ -175,8 +168,9 @@ train_x, test_x, train_y, test_y = train_test_split(
 
 
 # XG Boost
-xgb_r = xg.XGBRegressor(objective="reg:squarederror", n_estimators=100)
+xgb_r = xg.XGBRegressor(objective="reg:squarederror", n_estimators=500)
 xgb_r.fit(train_x, train_y)
+joblib.dump(xgb_r, model_fn) 
 pred = xgb_r.predict(test_x)
 
 test_y = ut.invTransform(scaler, test_y, "DTSM", train_df_norm.columns)
@@ -194,13 +188,13 @@ lgb_params = {
     "boosting_type": "gbdt",
     "metric": "rmse",
     #     'objective': 'regression',
-    "objective": "poisson",
+    "objective": "regression",
     #     'objective': 'tweedie',
     #     'tweedie_variance_power': 1.1,
     "force_row_wise": True,
     "n_jobs": -1,
-    "seed": 236,
-    "learning_rate": 0.075,
+    "seed": 11,
+    "learning_rate": np.random.uniform(0, 1),#0.075,
     "feature_fraction": 0.5,
     #     "sub_feature" : 0.8,
     #     "sub_row" : 0.75,
@@ -213,17 +207,40 @@ lgb_params = {
     "verbosity": 1,
     "num_boost_round": 600,
     #     'num_iterations' : 1200,
-    "n_estimators": 2000,
+    "n_estimators": 4000,
     # 'device': 'gpu',
     # 'gpu_platform_id': 2,
     # 'gpu_device_id': 1
 }
 
-train_data = lgb.Dataset(
-    train_df.loc[:, train_df_norm.columns != response_var], label=train_df[response_var]
-)
+# train_data = lgb.Dataset(
+#     train_df.loc[:, train_df_norm.columns != response_var], label=train_df[response_var]
+# )
 
-m_lgb = lgb.train(lgb_params, train_data)
+train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.1, 
+                                                    random_state=11)
+
+train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, 
+                                                    test_size=0.2, 
+                                                    random_state=11)
+
+train_data = lgb.Dataset(train_x, label=train_y)
+val_data = lgb.Dataset(val_x, label=val_y)
+test_data = lgb.Dataset(test_x, label=test_y)
+
+# m_lgb = lgb.train(lgb_params, train_data)
+m_lgb = lgb.train(lgb_params, train_data, early_stopping_rounds=150,
+                  valid_sets=[train_data, val_data], verbose_eval=100)
+joblib.dump(m_lgb, model_fn)
+
+pred = m_lgb.predict(test_x, n_jobs=-1)
+
+test_y = ut.invTransform(scaler, test_y, "DTSM", train_df_norm.columns)
+pred = ut.invTransform(scaler, pred, "DTSM", train_df_norm.columns)
+
+
+rmse = np.sqrt(MSE(test_y, pred))
+rmse
 
 
 # mnemonics_df.to_excel("Mnemonics_wth_file_with_stats_DTSM_length.xlsx")

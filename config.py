@@ -9,6 +9,8 @@ Created on Sun Jan 31 13:45:53 2021
 df_pickle_fn_norm = "df_norm_0131.pkl"
 df_pickle_fn = "df_0131.pkl"
 df_pickle_fn_pt = "df_pt_0131.pkl"
+scaler_fn = 'training_scaler.pkl'
+model_fn = 'XGBoost_model.pkl'
 
 
 missing_value = [-9999.25]
@@ -16,7 +18,7 @@ missingness_thresh = 0.2
 vars_to_use = ["RESD", "RESM", "DTCO", "DTSM", "NPHI", "RHOB", "GR"]
 response_var = "DTSM"
 pred_vars = [x for x in vars_to_use if x != response_var]
-nonneg_vars = ["DTCO", "DTSM", "RHOB", "GR"]
+nonneg_vars = ["RESD", "RESM", "DTCO", "DTSM", "RHOB", "GR"]
 thresh = 0.2
 res_lags = [1, 2, 3, 4, 5, 6]  # in ft
 gr_lags = [1, 2, 3, 4]
