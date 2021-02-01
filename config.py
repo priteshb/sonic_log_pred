@@ -9,8 +9,8 @@ Created on Sun Jan 31 13:45:53 2021
 df_pickle_fn_norm = "df_norm_0131.pkl"
 df_pickle_fn = "df_0131.pkl"
 df_pickle_fn_pt = "df_pt_0131.pkl"
-scaler_fn = 'training_scaler.pkl'
-model_fn = 'XGBoost_model.pkl'
+scalar_fn = 'training_scalar.pkl'
+model_fn = 'model.pkl'
 
 
 missing_value = [-9999.25]

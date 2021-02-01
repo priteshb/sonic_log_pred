@@ -21,7 +21,7 @@ file_list = []
 file_list += [file for file in os.listdir(os.curdir + '/test_data') 
               if file.endswith(".las")]
 
-scaler_fn = cnfg.scaler_fn
+scalar_fn = cnfg.scalar_fn
 model_fn = cnfg.model_fn
 
 missing_value = cnfg.missing_value
@@ -55,7 +55,7 @@ for file in file_list:
     # file = '1cf78b7ca1cc_TGS.las'
     # file = '4bc281e7f645_TGS.las'
     # file = '70a049901d0c_TGS.las'
-    inputlas[file] = lasio.read(file)  # Read file
+    inputlas[file] = lasio.read('./test_data/'+file)  # Read file
     print(file)
 
     df = inputlas[file].df()  # Convert data to dataframe
@@ -93,7 +93,7 @@ for file in file_list:
             # df = df[df["RESM"] > 0]
             df[df[nonneg_vars] < 0] = 0 # remove negative values 
             # df = ut.outlier_detection(df)
-            df = ut.convert_res_to_log(df)
+            # df = ut.convert_res_to_log(df)
             # df = ut.normalize_cols(df)
             # df = ut.outlier_detection(df)
 
@@ -107,14 +107,16 @@ for file in file_list:
             df = ut.create_lag_features(df, "NPHI", lags=nphi_lags, wins=nphi_win)
             df = ut.create_lag_features(df, "RHOB", lags=rhob_lags, wins=rhob_win)
             df = ut.create_lag_features(df, "DTCO", lags=dtco_lags, wins=dtco_win)
-            df = df.dropna(axis=0, how="any")
+            df = df.fillna(method='ffill')
+            df = df.fillna(method='bfill')
+            # df = df.dropna(axis=0, how="any")
 
             print(f"Appending {file} to main df")
             test_all[file] = test_df.append(df)
             print(test_df.shape)
      
 
-scalar = joblib.load(scaler_fn)
+scalar = joblib.load(scalar_fn)
 test_df_norm = ut.normalize_test(test_df, scalar)
 
 #Train and test data division

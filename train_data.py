@@ -26,7 +26,7 @@ file_list += [file for file in os.listdir(os.curdir+'/train_data')
 df_pickle_fn_norm = cnfg.df_pickle_fn_norm
 df_pickle_fn = cnfg.df_pickle_fn
 df_pickle_fn_pt = cnfg.df_pickle_fn_pt
-scaler_fn = cnfg.scaler_fn
+scalar_fn = cnfg.scalar_fn
 model_fn = cnfg.model_fn
 
 missing_value = cnfg.missing_value
@@ -91,7 +91,7 @@ for file in file_list:
     # file = '1cf78b7ca1cc_TGS.las'
     # file = '4bc281e7f645_TGS.las'
     # file = '70a049901d0c_TGS.las'
-    inputlas[file] = lasio.read(file)  # Read file
+    inputlas[file] = lasio.read('./train_data/'+file)  # Read file
     print(file)
 
     df = inputlas[file].df()  # Convert data to dataframe
@@ -125,11 +125,11 @@ for file in file_list:
         if len(high_missing_cols) > 0:
             df = df.dropna(axis=1, how="any")
         if len(df.columns) == len(vars_to_use):
-            df = df[df["RESD"] > 0] #remove negative resistivities
-            df = df[df["RESM"] > 0]
+            # df = df[df["RESD"] > 0] #remove negative resistivities
+            # df = df[df["RESM"] > 0]
             df[df[nonneg_vars] < 0] = 0 # remove negative values 
             # df = ut.outlier_detection(df)
-            df = ut.convert_res_to_log(df)
+            # df = ut.convert_res_to_log(df)
             # df = ut.normalize_cols(df)
             df = ut.outlier_detection(df)
 
@@ -149,8 +149,8 @@ for file in file_list:
 #              plot_kws = {'alpha': 0.6, 's': 30, 'edgecolor': 'k'})
 
 train_df.to_pickle(df_pickle_fn)
-train_df_norm, scaler = ut.normalize_cols(train_df)
-joblib.dump(scaler, scaler_fn) 
+train_df_norm, scalar = ut.normalize_cols(train_df)
+joblib.dump(scalar, scalar_fn) 
 # train_df_norm, scaler = ut.powertransform_cols(train_df)
 # train_df_norm.to_pickle(df_pickle_fn_pt)
 # train_df_norm = train_df
@@ -158,6 +158,8 @@ train_df_norm.to_pickle(df_pickle_fn_norm)
 
 # train_df_norm = pd.read_pickle(df_pickle_fn)
 
+
+# XG Boost
 #Train and test data division
 x = np.asarray(train_df_norm.loc[:, train_df_norm.columns != response_var])
 y = np.asarray(train_df_norm[response_var])
@@ -166,19 +168,19 @@ train_x, test_x, train_y, test_y = train_test_split(
     x, y, test_size=0.3, random_state=11
 )
 
-
-# XG Boost
 xgb_r = xg.XGBRegressor(objective="reg:squarederror", n_estimators=500)
 xgb_r.fit(train_x, train_y)
 joblib.dump(xgb_r, model_fn) 
 pred = xgb_r.predict(test_x)
 
-test_y = ut.invTransform(scaler, test_y, "DTSM", train_df_norm.columns)
-pred = ut.invTransform(scaler, pred, "DTSM", train_df_norm.columns)
+test_y = ut.invTransform(scalar, test_y, "DTSM", train_df_norm.columns)
+pred = ut.invTransform(scalar, pred, "DTSM", train_df_norm.columns)
 
 rmse = np.sqrt(MSE(test_y, pred))
 rmse
 xgb_r.feature_importances_
+
+
 
 # Light GBM
 import lightgbm as lgb
@@ -217,7 +219,11 @@ lgb_params = {
 #     train_df.loc[:, train_df_norm.columns != response_var], label=train_df[response_var]
 # )
 
-train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.1, 
+#Train and test data division
+x = np.asarray(train_df_norm.loc[:, train_df_norm.columns != response_var])
+y = np.asarray(train_df_norm[response_var])
+
+train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.2, 
                                                     random_state=11)
 
 train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, 
@@ -235,8 +241,8 @@ joblib.dump(m_lgb, model_fn)
 
 pred = m_lgb.predict(test_x, n_jobs=-1)
 
-test_y = ut.invTransform(scaler, test_y, "DTSM", train_df_norm.columns)
-pred = ut.invTransform(scaler, pred, "DTSM", train_df_norm.columns)
+test_y = ut.invTransform(scalar, test_y, "DTSM", train_df_norm.columns)
+pred = ut.invTransform(scalar, pred, "DTSM", train_df_norm.columns)
 
 
 rmse = np.sqrt(MSE(test_y, pred))
