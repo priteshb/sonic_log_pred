@@ -117,8 +117,9 @@ def normalize_cols(df):
     # scaler = PowerTransformer(method='yeo-johnson')
     cols = df.columns
     scaler = MinMaxScaler()
-    normalized_data = scaler.fit_transform(df)
-    normalized_data = pd.DataFrame(normalized_data, columns=cols)
+    scaler_fit = scaler.fit(df)
+    scaler_transformed = scaler.transform(df)
+    normalized_data = pd.DataFrame(scaler_transformed, columns=cols)
 
     ## ColumnTransformer
     # ct = ColumnTransformer([('transform', scaler, pred_vars)], remainder='passthrough')
@@ -127,11 +128,40 @@ def normalize_cols(df):
     # transformed_data = ct.fit_transform(df)
     # transformed_data = pd.DataFrame(transformed_data, columns=pred_vars)
 
-    return normalized_data, scaler
+    return normalized_data, scaler_fit#, scaler_transformed
 
-def normalize_test(df, scalar):
+def apply_minmaxscaler(df, cols):
+    """
+    Apply min max scaler to input data
+
+    Parameters
+    ----------
+    x : dataframe
+        Input dataframe.
+
+    Returns
+    -------
+    array
+        Return array with min max scaler normalized data.
+
+    """
+    
+    # cols = df.columns
+    scaler = MinMaxScaler()
+    scaler_fit = scaler.fit(df)
+    scaler_transformed = scaler.transform(df)
+    scaler_transformed =pd.DataFrame(scaler_transformed, columns=cols)
+    
+    return scaler_transformed, scaler_fit
+
+
+def normalize_test(df, scaler):
     cols = df.columns
-    normalized_data = scalar.transform(df.values)
+    # dummy = pd.DataFrame(np.zeros((len(data), len(colNames))), columns=colNames)
+    # dummy[colName] = data
+    # dummy = pd.DataFrame(scaler.transform(dummy), columns=colNames)
+    
+    normalized_data = scaler.transform(df)
     normalized_data = pd.DataFrame(normalized_data, columns=cols)
 
     return normalized_data

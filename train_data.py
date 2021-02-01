@@ -150,8 +150,16 @@ for file in file_list:
 #              plot_kws = {'alpha': 0.6, 's': 30, 'edgecolor': 'k'})
 
 train_df.to_pickle(df_pickle_fn)
-train_df_norm, scalar = ut.normalize_cols(train_df)
-joblib.dump(scalar, scalar_fn) 
+train_df_norm_x, scalar_x = ut.apply_minmaxscaler(train_df.drop([response_var], 
+                                                                axis=1), 
+                                                  train_df.drop([response_var], 
+                                                                axis=1).columns)
+train_df_norm_y, scalar_y = ut.apply_minmaxscaler(train_df[[response_var]], 
+                                                  [response_var])
+joblib.dump(scalar_x, 'scaler_x.pkl') 
+joblib.dump(scalar_y, 'scaler_y.pkl') 
+
+train_df_norm = pd.concat([train_df_norm_x, train_df_norm_y], axis=1)
 # train_df_norm, scaler = ut.powertransform_cols(train_df)
 # train_df_norm.to_pickle(df_pickle_fn_pt)
 # train_df_norm = train_df
@@ -174,8 +182,8 @@ xgb_r.fit(train_x, train_y)
 joblib.dump(xgb_r, model_fn) 
 pred = xgb_r.predict(test_x)
 
-test_y = ut.invTransform(scalar, test_y, "DTSM", train_df_norm.columns)
-pred = ut.invTransform(scalar, pred, "DTSM", train_df_norm.columns)
+test_y = ut.invTransform(scalar_y, test_y, "DTSM", train_df_norm.columns)
+pred = ut.invTransform(scalar_y, pred, "DTSM", train_df_norm.columns)
 
 rmse = np.sqrt(MSE(test_y, pred))
 rmse
@@ -184,8 +192,6 @@ xgb_r.feature_importances_
 
 
 # Light GBM
-
-
 lgb_params = {
     #     'nfold': 5,
     "boosting_type": "gbdt",
@@ -236,14 +242,14 @@ val_data = lgb.Dataset(val_x, label=val_y)
 test_data = lgb.Dataset(test_x, label=test_y)
 
 # m_lgb = lgb.train(lgb_params, train_data)
-m_lgb = lgb.train(lgb_params, train_data, early_stopping_rounds=150,
+m_lgb = lgb.train(lgb_params, train_data, early_stopping_rounds=10,
                   valid_sets=[train_data, val_data], verbose_eval=100)
 joblib.dump(m_lgb, model_fn)
 
 pred = m_lgb.predict(test_x, n_jobs=-1)
 
-test_y = ut.invTransform(scalar, test_y, "DTSM", train_df_norm.columns)
-pred = ut.invTransform(scalar, pred, "DTSM", train_df_norm.columns)
+test_y = ut.invTransform(scalar_y, test_y, "DTSM", train_df_norm.columns)
+pred = ut.invTransform(scalar_y, pred, "DTSM", train_df_norm.columns)
 
 
 rmse = np.sqrt(MSE(test_y, pred))
