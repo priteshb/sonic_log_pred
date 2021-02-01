@@ -145,7 +145,7 @@ for file in file_list:
     final_dict[file] = pred
     print('Added output to final_dict')
     well_data = pd.DataFrame(pred, columns=[file])
-    well_data.to_excel(file, index = False)
+    well_data.to_excel(file.split('.')[0] + '.xlsx', index = False)
     
     
 

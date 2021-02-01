@@ -268,4 +268,4 @@ def outlier_detection(df):
     # plt.tight_layout(1.7)
     # plt.show()
 
-    return well_train_svm
+    return well_train_iso
