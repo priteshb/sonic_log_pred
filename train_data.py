@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error as MSE
+import lightgbm as lgb
 import xgboost as xg
 
 pd.set_option("max_columns", None)
@@ -139,7 +140,7 @@ for file in file_list:
             df = ut.create_lag_features(df, "NPHI", lags=nphi_lags, wins=nphi_win)
             df = ut.create_lag_features(df, "RHOB", lags=rhob_lags, wins=rhob_win)
             df = ut.create_lag_features(df, "DTCO", lags=dtco_lags, wins=dtco_win)
-            df = df.dropna(axis=0, how="any")
+            # df = df.dropna(axis=0, how="any")
 
             print(f"Appending {file} to main df")
             train_df = train_df.append(df)
@@ -183,7 +184,7 @@ xgb_r.feature_importances_
 
 
 # Light GBM
-import lightgbm as lgb
+
 
 lgb_params = {
     #     'nfold': 5,
@@ -246,7 +247,7 @@ pred = ut.invTransform(scalar, pred, "DTSM", train_df_norm.columns)
 
 
 rmse = np.sqrt(MSE(test_y, pred))
-rmse
+print(rmse)
 
 
 # mnemonics_df.to_excel("Mnemonics_wth_file_with_stats_DTSM_length.xlsx")

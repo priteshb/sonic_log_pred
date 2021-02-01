@@ -131,7 +131,7 @@ def normalize_cols(df):
 
 def normalize_test(df, scalar):
     cols = df.columns
-    normalized_data = scalar.fit_transform(df)
+    normalized_data = scalar.transform(df.values)
     normalized_data = pd.DataFrame(normalized_data, columns=cols)
 
     return normalized_data
