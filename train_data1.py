@@ -279,7 +279,7 @@ print(rmse)
 
 fit_params={"early_stopping_rounds":30, 
             "eval_metric" : 'rmse', 
-            "eval_set" : [(test_x, test_y)],
+            "eval_set" : [(val_x, val_y)],
             # 'eval_names': ['valid'],
             #'callbacks': [lgb.reset_parameter(learning_rate=learning_rate_010_decay_power_099)],
             'verbose': 100}
@@ -292,34 +292,35 @@ param_test ={'num_leaves': sp_randint(6, 50),
              'reg_alpha': [0, 1e-1, 1, 2, 5, 7, 10, 50, 100],
              'reg_lambda': [0, 1e-1, 1, 5, 10, 20, 50, 100]}
 
-n_HP_points_to_test = 100
-clf = lgb.LGBMClassifier(max_depth=-1, random_state=11, silent=True, 
+# n_HP_points_to_test = 100
+clf = lgb.LGBMRegressor(max_depth=-1, random_state=11, silent=True, 
                          metric='rmse', n_jobs=-1, n_estimators=5000)
+
 gs = RandomizedSearchCV(
     estimator=clf, param_distributions=param_test, 
     # n_iter=n_HP_points_to_test,
-    scoring='neg_mean_squared_error',
+    scoring='neg_root_mean_squared_error',
     cv=5,
     refit=True,
     random_state=11,
     verbose=True)
 
-gs.fit(train_x, train_y, **fit_params)
+gs.fit(train_x.reset_index(drop=True), train_y.reset_index(drop=True), **fit_params)
 print('Best score reached: {} with params: {} '.format(gs.best_score_, gs.best_params_))
 
-opt_parameters = {'colsample_bytree': 0.9234, 'min_child_samples': 399, 
-                  'min_child_weight': 0.1, 'num_leaves': 13, 'reg_alpha': 2, 
-                  'reg_lambda': 5, 'subsample': 0.855}
+# opt_parameters = {'colsample_bytree': 0.9234, 'min_child_samples': 399, 
+#                   'min_child_weight': 0.1, 'num_leaves': 13, 'reg_alpha': 2, 
+#                   'reg_lambda': 5, 'subsample': 0.855}
 
 opt_parameters = gs.best_params_
 
-clf_sw = lgb.LGBMClassifier(**clf.get_params())
+clf_sw = lgb.LGBMRegressor(**clf.get_params())
 #set optimal parameters
 clf_sw.set_params(**opt_parameters)
 
 gs_sample_weight = GridSearchCV(estimator=clf_sw, 
                                 param_grid={'scale_pos_weight':[1,2,6,12]},
-                                scoring='roc_auc',
+                                scoring='neg_root_mean_squared_error',
                                 cv=5,
                                 refit=True,
                                 verbose=True)
