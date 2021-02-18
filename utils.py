@@ -19,7 +19,7 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import PowerTransformer
-# from sklearn.experimental import enable_iterative_imputer
+from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 # import xgboost as xg
 
@@ -268,4 +268,4 @@ def outlier_detection(df):
     # plt.tight_layout(1.7)
     # plt.show()
 
-    return well_train_iso
+    return well_train_svm
