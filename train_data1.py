@@ -275,6 +275,20 @@ pred = ut.invTransform(scalar_y, pred, "DTSM", train_df.columns)
 rmse = np.sqrt(MSE(test_y, pred))
 print(rmse)
 
+def learning_rate_010_decay_power_099(current_iter):
+    base_learning_rate = 0.1
+    lr = base_learning_rate  * np.power(.99, current_iter)
+    return lr if lr > 1e-3 else 1e-3
+
+def learning_rate_010_decay_power_0995(current_iter):
+    base_learning_rate = 0.1
+    lr = base_learning_rate  * np.power(.995, current_iter)
+    return lr if lr > 1e-3 else 1e-3
+
+def learning_rate_005_decay_power_099(current_iter):
+    base_learning_rate = 0.05
+    lr = base_learning_rate  * np.power(.99, current_iter)
+    return lr if lr > 1e-3 else 1e-3
 
 
 fit_params={"early_stopping_rounds":30, 
@@ -325,10 +339,40 @@ gs_sample_weight = GridSearchCV(estimator=clf_sw,
                                 refit=True,
                                 verbose=True)
 
-gs_sample_weight.fit(train_data, **fit_params)
+gs_sample_weight.fit(train_x.reset_index(drop=True), train_y.reset_index(drop=True), **fit_params)
 
 print('Best score reached: {} with params: {} '.format(gs_sample_weight.best_score_, 
                                                        gs_sample_weight.best_params_))
+
+# print("Valid+-Std     Train  :   Parameters")
+# for i in np.argsort(gs_sample_weight.cv_results_['mean_test_score'])[-5:]:
+#     print('{1:.3f}+-{3:.3f}     {2:.3f}   :  {0}'.format(gs_sample_weight.cv_results_['params'][i], 
+#                                     gs_sample_weight.cv_results_['mean_test_score'][i], 
+#                                     gs_sample_weight.cv_results_['mean_train_score'][i],
+#                                     gs_sample_weight.cv_results_['std_test_score'][i]))
+
+clf_final = lgb.LGBMRegressor(**clf.get_params())
+#set optimal parameters
+clf_final.set_params(**opt_parameters)
+
+#Train the final model with learning rate decay
+clf_final.fit(train_x, train_y, **fit_params, 
+              callbacks=[lgb.reset_parameter(learning_rate=
+                                             learning_rate_010_decay_power_0995)])
+
+
+feat_imp = pd.Series(clf_final.feature_importances_, index=train_x.columns)
+feat_imp.nlargest(20).plot(kind='barh', figsize=(8,10))
+
+
+pred = clf_final.predict(test_x, n_jobs=-1)
+
+test_y_ = ut.invTransform(scalar_y, test_y, "DTSM", train_df.columns)
+pred = ut.invTransform(scalar_y, pred, "DTSM", train_df.columns)
+
+
+rmse = np.sqrt(MSE(test_y_, pred))
+print(rmse)
 
 
 #Bayesian optimization
