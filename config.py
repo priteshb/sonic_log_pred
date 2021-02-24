@@ -13,7 +13,7 @@ scalar_fn = 'training_scalar.pkl'
 model_fn = 'model.pkl'
 
 
-missing_value = [-9999.25]
+missing_value = -9999.25
 missingness_thresh = 0.2
 vars_to_use = ["RESD", "RESM", "DTCO", "DTSM", "NPHI", "RHOB", "GR"]
 response_var = "DTSM"

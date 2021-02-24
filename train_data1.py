@@ -20,6 +20,7 @@ from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
 from scipy.stats import randint as sp_randint
 from scipy.stats import uniform as sp_uniform
 import lightgbm as lgb
+from sklearn.svm import OneClassSVM
 # import xgboost as xg
 
 pd.set_option("max_columns", None)
@@ -131,8 +132,10 @@ for file in file_list:
         if len(high_missing_cols) > 0:
             df = df.dropna(axis=1, how="any")
         if len(df.columns) == len(vars_to_use):
-            df = df[df["RESD"] > 0] #remove negative resistivities
-            df = df[df["RESM"] > 0]
+            # df = df[df["RESD"] > 0] #remove negative resistivities
+            # df = df[df["RESM"] > 0]
+            df[df['RESD'] <= 0] = 0.01
+            df[df['RESM'] <= 0] = 0.01
             df[df[nonneg_vars] < 0] = 0 # remove negative values 
             # df = ut.outlier_detection(df)
             df = ut.convert_res_to_log(df)
@@ -186,6 +189,10 @@ for file in file_list:
 train_df.to_pickle('train_df.pkl')
 test_df.to_pickle('test_df.pkl')
 val_df.to_pickle('val_df.pkl')
+
+val_df = pd.read_pickle(r'val_df.pkl')
+test_df = pd.read_pickle(r'test_df.pkl')
+
 train_df_norm_x, scalar_x = ut.apply_minmaxscaler(train_df.drop([response_var], 
                                                                 axis=1), 
                                                   train_df.drop([response_var], 
@@ -203,15 +210,27 @@ train_df_norm.to_pickle(df_pickle_fn_norm)
 
 train_x = train_df_norm_x
 train_y = train_df_norm_y
+
+# test_df_norm = pd.concat([test_df_norm_x, test_df_norm_y], axis=1)
+
+svm = OneClassSVM(nu=0.1)
+yhat = svm.fit_predict(pd.DataFrame(val_df[response_var]))
+mask = yhat != -1
+val_df = val_df[mask]
+
+svm = OneClassSVM(nu=0.1)
+yhat = svm.fit_predict(pd.DataFrame(test_df[response_var]))
+mask = yhat != -1
+val_df = test_df[mask]
+
 test_x = ut.normalize_test(test_df.drop([response_var], axis=1), scalar_x)
 test_y = ut.normalize_test(test_df[[response_var]], scalar_y)
-# test_df_norm = pd.concat([test_df_norm_x, test_df_norm_y], axis=1)
 
 val_x = ut.normalize_test(val_df.drop([response_var], axis=1), scalar_x)
 val_y = ut.normalize_test(val_df[[response_var]], scalar_y)
 # val_df_norm = pd.concat([val_df_norm_x, val_df_norm_y], axis=1)
 
-# Light GBM
+# Basic Light GBM
 lgb_params = {
     #     'nfold': 5,
     "boosting_type": "gbdt",
@@ -261,11 +280,11 @@ test_data = lgb.Dataset(test_x, label=test_y)
 m_lgb = lgb.train(lgb_params, train_data, early_stopping_rounds=50,
                   valid_sets=[train_data, val_data], verbose_eval=100)
 
-m_lgb_cv = lgb.cv(lgb_params, train_data, nfold=3, stratified=False, 
-                  early_stopping_rounds=10)
+# m_lgb_cv = lgb.cv(lgb_params, train_data, nfold=3, stratified=False, 
+#                   early_stopping_rounds=10)
 joblib.dump(m_lgb, model_fn)
 
-pred = m_lgb_cv
+# pred = m_lgb_cv
 pred = m_lgb.predict(test_x, n_jobs=-1)
 
 test_y = ut.invTransform(scalar_y, test_y, "DTSM", train_df.columns)
@@ -275,6 +294,8 @@ pred = ut.invTransform(scalar_y, pred, "DTSM", train_df.columns)
 rmse = np.sqrt(MSE(test_y, pred))
 print(rmse)
 
+
+#Hyper param optimization Lightgbm
 def learning_rate_010_decay_power_099(current_iter):
     base_learning_rate = 0.1
     lr = base_learning_rate  * np.power(.99, current_iter)
@@ -375,6 +396,99 @@ rmse = np.sqrt(MSE(test_y_, pred))
 print(rmse)
 
 
+
+
+#RNN
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from keras.models import Model
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.optimizers import Adam
+
+
+# ARCHITECTURE_PARAMS = {
+#     "n1": [64],
+#     "n2": [32],
+#     "n3": [1],
+#     "dropout": [0.15, 0.25],
+#     "rec_dropout": [0.5]
+# }
+LR = 0.00005
+ACTIVATION_FUNC = "relu"
+OUTPUT_LAYER_ACT_FUNCT = "linear"
+ERROR_METRIC = "mse"
+EPOCHS = 25
+BATCH_SIZE = 64
+TRAIN_RATIOS = 0.8
+METRIC_CHOICE = [tf.keras.metrics.RootMeanSquaredError()]
+LOSS ="mse",
+OPTIMIZER = Adam(lr=LR)
+
+
+train_x_rnn = np.asarray(train_x.replace(np.nan, missing_value)).reshape(-1, 1, train_x.shape[1])
+train_y_rnn = np.asarray(train_x.replace(np.nan, missing_value))#.reshape(-1, 1, train_y.shape[1])
+val_x_rnn = np.asarray(val_x.replace(np.nan, missing_value)).reshape(-1, 1, val_x.shape[1])
+val_y_rnn = np.asarray(val_y.replace(np.nan, missing_value))#.reshape(-1, 1, val_y.shape[1])
+test_x_rnn = np.asarray(test_x.replace(np.nan, missing_value)).reshape(-1, 1, val_x.shape[1])
+test_y_rnn = test_y.replace(np.nan, missing_value)
+
+callbacks = [EarlyStopping(monitor='val_loss', mode=min, patience=3), 
+             ModelCheckpoint('../rnn_model.h5', save_best_only=True, 
+             save_weights_only=False, monitor='val_loss', verbose=1)]
+
+model_pipeline_input = layers.Input(shape=(1, train_x.shape[1]), dtype='float32')
+model_pipeline_masking = layers.Masking(mask_value=missing_value)(model_pipeline_input)
+
+# model_pipeline  = layers.Bidirectional(
+#     layers.GRU(16, 
+#                dropout=0.15, 
+#                return_sequences=True, 
+#                recurrent_dropout=0.5))(model_pipeline_masking)
+
+model_pipeline  = layers.LSTM(64,
+                              dropout=0.25, 
+                              return_sequences=True, 
+                              # recurrent_dropout=0.5, 
+                              activation=ACTIVATION_FUNC)(model_pipeline_masking)
+
+# Compile model with loss and optimizer
+model_pipeline = layers.Dense(1, activation=OUTPUT_LAYER_ACT_FUNCT)(model_pipeline)
+model = Model(inputs=model_pipeline_input, outputs=model_pipeline)
+
+model.compile(loss=LOSS, 
+              optimizer=OPTIMIZER, 
+              metrics=METRIC_CHOICE)
+model.fit(train_x_rnn, train_y_rnn, 
+          validation_data=(val_x_rnn, val_y_rnn), 
+          batch_size=BATCH_SIZE, 
+          epochs=EPOCHS,
+          callbacks=callbacks
+          )
+
+model.evaluate(val_x_rnn, val_y_rnn)
+
+pred_rnn = model.predict(test_x_rnn)
+pred_rnn = ut.invTransform(scalar_y, pred_rnn.ravel().reshape(-1,1), "DTSM", train_df.columns)
+
+test_y_ = ut.invTransform(scalar_y, test_y, "DTSM", train_df.columns)
+
+rmse = np.sqrt(MSE(test_y_, pred_rnn))
+print(rmse)
+
+pred_ens = []
+for l, r in zip(pred, pred_rnn):
+    if r <=0:
+        pred_ens.append(l)
+    else:
+        pred_ens.append(r)
+        
+rmse = np.sqrt(MSE(test_y_, pred_ens))
+print(rmse)
+
+plt.scatter(x=test_y_, y=pred)
+
+#------------------------------------------------------------------------------
 #Bayesian optimization
 from bayes_opt import BayesianOptimization
 
