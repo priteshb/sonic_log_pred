@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Feb 24 18:54:26 2021
+Created on Wed Feb 02 18:54:26 2021
 
 @author: Pritesh Bhoumick
 """
@@ -29,6 +29,11 @@ from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
 from scipy.stats import randint as sp_randint
 from scipy.stats import uniform as sp_uniform
 import lightgbm as lgb
+import tensorflow as tf
+from tensorflow.keras import layers
+from keras.models import Model
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.optimizers import Adam
 
 
 # Specify input parameters for training and testing
@@ -143,10 +148,12 @@ def remove_negatives(df, cols):
 
 # Create lagged features and rolling mean window for logs
 def create_lag_features(df, param, lags=None, wins=None):
+    # Create lagged features
     lag_cols = [param + "_lag_" + str(lag) for lag in lags]
     for lag, lag_col in zip(lags, lag_cols):
         df[lag_col] = df[param].shift(2 * lag)
 
+    # Create rolling window features
     for win in wins:
         for lag, lag_col in zip(lags, lag_cols):
             df[param + "_rmean_" + str(lag) + "_" + str(win)] = df[lag_col].transform(
@@ -162,17 +169,6 @@ def convert_res_to_log(df):
     df["RESD"] = np.log10(df["RESD"])
 
     return df
-
-
-# Normalize dataset
-def normalize_cols(df):
-    cols = df.columns
-    scaler = MinMaxScaler()
-    scaler_fit = scaler.fit(df)
-    scaler_transformed = scaler.transform(df)
-    normalized_data = pd.DataFrame(scaler_transformed, columns=cols)
-
-    return normalized_data, scaler_fit  # , scaler_transformed
 
 
 # Apply minmax scaler
@@ -194,7 +190,7 @@ def normalize_test(df, scaler):
     return normalized_data
 
 
-# Power transform columns
+# Power transform columns (Not used in the code)
 def powertransform_cols(df):
     cols = df.columns
     scaler = PowerTransformer(method="yeo-johnson")
@@ -267,26 +263,27 @@ def outlier_detection(df):
         len(well_train_svm),
     )
 
+    # Commented plotting code; Uncomment if required to be plotted
     # plt.figure(figsize=(13,10))
 
     # plt.subplot(3,2,1)
-    # df[vars_to_use].boxplot()
+    # df.boxplot()
     # plt.title('Before Outlier Removal', size=15)
 
     # plt.subplot(3,2,2)
-    # well_train_std[vars_to_use].boxplot()
+    # well_train_std.boxplot()
     # plt.title('After Outlier Removal with Standard Deviation Filter', size=15)
 
     # plt.subplot(3,2,3)
-    # well_train_iso[vars_to_use].boxplot()
+    # well_train_iso.boxplot()
     # plt.title('After Outlier Removal with Isolation Forest', size=15)
 
     # plt.subplot(3,2,4)
-    # well_train_ee[vars_to_use].boxplot()
+    # well_train_ee.boxplot()
     # plt.title('After Outlier Removal with Min. Covariance', size=15)
 
     # plt.subplot(3,2,5)
-    # well_train_lof[vars_to_use].boxplot()
+    # well_train_lof.boxplot()
     # plt.title('After Outlier Removal with Local Outlier Factor', size=15)
 
     # plt.subplot(3,2,6)
@@ -296,7 +293,7 @@ def outlier_detection(df):
     # plt.tight_layout(1.7)
     # plt.show()
 
-    return well_train_svm
+    return well_train_svm  # Return SVM output as it was found to be most effective
 
 
 # Decaying learning rate generator
@@ -372,10 +369,12 @@ for file in file_list:
     df = df.dropna(subset=[response_var])  # Drop rows with no response logs
     des = pd.DataFrame(df.describe())  # Get data stats
 
-    for curves in inputlas_.curves:
+    for curves in inputlas_.curves:  # Loop through each curve in the dataset
         curv_desc = [file, curves.mnemonic, curves.unit, curves.descr]
         curv_stats = list(des.loc[:, curves.mnemonic].values)
-        missingness = 100 * df[curves.mnemonic].isnull().mean()
+        missingness = (
+            100 * df[curves.mnemonic].isnull().mean()
+        )  # Calculate missingness in each column
         curv_desc.extend(curv_stats)
         curv_desc.extend([missingness])
         temp_df = pd.DataFrame(
@@ -396,7 +395,9 @@ for file in file_list:
                 "MISSINGNESS",
             ],
         )
-        temp_df = temp_df[temp_df["COUNT"] > 0]
+        temp_df = temp_df[
+            temp_df["COUNT"] > 0
+        ]  # Only take columns that dont have zero rows
         mnemonics_df = mnemonics_df.append(temp_df)
 
 # Export input mnemonics and corresponding log stats
@@ -504,8 +505,12 @@ for file in file_list:
             val_df = val_df.append(df_val)
 
 # Pairplot between all input logs
-sns.pairplot(train_df, vars=vars_to_use, diag_kind='kde',
-              plot_kws = {'alpha': 0.6, 's': 30, 'edgecolor': 'k'})
+sns.pairplot(
+    train_df,
+    vars=vars_to_use,
+    diag_kind="kde",
+    plot_kws={"alpha": 0.6, "s": 30, "edgecolor": "k"},
+)
 
 # Save prepared data into pickle files for easier access
 train_df.to_pickle("train_df.pkl")
@@ -518,25 +523,18 @@ val_df = pd.read_pickle(r"val_df.pkl")
 test_df = pd.read_pickle(r"test_df.pkl")
 
 # Normalize train data for predictor logs
-train_df_norm_x, scalar_x = apply_minmaxscaler(
+train_x, scalar_x = apply_minmaxscaler(
     train_df.drop([response_var], axis=1), train_df.drop([response_var], axis=1).columns
 )
 
 # Normalize train data for response logs
-train_df_norm_y, scalar_y = apply_minmaxscaler(train_df[[response_var]], [response_var])
+train_y, scalar_y = apply_minmaxscaler(train_df[[response_var]], [response_var])
 
 # Dump scalar object from normalization
 joblib.dump(scalar_x, "scaler_x.pkl")
 joblib.dump(scalar_y, "scaler_y.pkl")
 
-# Concatenate predictor and response training logs
-train_df_norm = pd.concat([train_df_norm_x, train_df_norm_y], axis=1)
-
-
-train_x = train_df_norm_x
-train_y = train_df_norm_y
-
-# Remove outlier from validation and test data on response log only
+# Remove outlier from validation and test data on response variable only
 svm = OneClassSVM(nu=0.1)
 yhat = svm.fit_predict(pd.DataFrame(val_df[response_var]))
 mask = yhat != -1
@@ -602,7 +600,9 @@ gs = RandomizedSearchCV(
 gs.fit(train_x.reset_index(drop=True), train_y.reset_index(drop=True), **fit_params)
 
 # Print best params after Randomized Search
-print("Best score reached: {} with params: {} ".format(gs.best_score_, gs.best_params_))
+print(
+    "Best score achieved: {} with params: {} ".format(gs.best_score_, gs.best_params_)
+)
 
 opt_parameters = gs.best_params_  # Save best hyperparameters
 
@@ -629,7 +629,7 @@ gs_sample_weight.fit(
 
 # Print best hyperparameters after Grid Search
 print(
-    "Best score reached: {} with params: {} ".format(
+    "Best score achieved: {} with params: {} ".format(
         gs_sample_weight.best_score_, gs_sample_weight.best_params_
     )
 )
@@ -659,17 +659,97 @@ feat_imp = pd.Series(clf_final.feature_importances_, index=train_x.columns)
 feat_imp.nlargest(20).plot(kind="barh", figsize=(8, 10))
 
 # Predict output on test data
-pred = clf_final.predict(test_x, n_jobs=-1)
+pred_gbm = clf_final.predict(test_x, n_jobs=-1)
 
 # Inverse transfoem test data
 test_y_ = invTransform(scalar_y, test_y, "DTSM", train_df.columns)
 
 # Inverse transform predicted predicted data
-pred = invTransform(scalar_y, pred, "DTSM", train_df.columns)
+pred_gbm = invTransform(scalar_y, pred_gbm, "DTSM", train_df.columns)
 
 # Calculate RMSE of prediced data
-rmse = np.sqrt(MSE(test_y_, pred))
-print(rmse)
+rmse = np.sqrt(MSE(test_y_, pred_gbm))
+print(f"RMSE from LightGBM model: {rmse}")
+
+
+# Bidirectional RNN
+
+LR = 0.00005  # Fixed Learning rate
+ACTIVATION_FUNC = "relu"  # Activation function to be used
+EPOCHS = 25  # Max no. of iterations
+BATCH_SIZE = 64  # Batches of data to be used
+METRIC_CHOICE = [tf.keras.metrics.RootMeanSquaredError()]  # Metric choice
+LOSS = "mse"  # Loss function
+OPTIMIZER = Adam(lr=LR)  # Optimizer function
+
+# Define train, validation and test data for bidirectional RNN modelling
+train_x_rnn = np.asarray(train_x.replace(np.nan, missing_value)).reshape(
+    -1, 1, train_x.shape[1]
+)
+train_y_rnn = np.asarray(train_x.replace(np.nan, missing_value))
+val_x_rnn = np.asarray(val_x.replace(np.nan, missing_value)).reshape(
+    -1, 1, val_x.shape[1]
+)
+val_y_rnn = np.asarray(val_y.replace(np.nan, missing_value))
+test_x_rnn = np.asarray(test_x.replace(np.nan, missing_value)).reshape(
+    -1, 1, val_x.shape[1]
+)
+test_y_rnn = test_y.replace(np.nan, missing_value)
+
+# Callback function to stop iteration once validation loss do not reduce further
+# and save the best model checkpoint object
+callbacks = [
+    EarlyStopping(monitor="val_loss", mode=min, patience=3),
+    ModelCheckpoint(
+        os.listdir(os.curdir + "../rnn_model.h5"),
+        save_best_only=True,
+        save_weights_only=False,
+        monitor="val_loss",
+        verbose=1,
+    ),
+]
+
+# Define the bidirectional RNN layer structure
+model_pipeline_input = layers.Input(shape=(1, train_x.shape[1]), dtype="float32")
+
+# Add masking layer to handle NaNs in the dataset
+model_pipeline_masking = layers.Masking(mask_value=missing_value)(model_pipeline_input)
+
+model_pipeline = layers.Bidirectional(
+    layers.GRU(16, dropout=0.15, return_sequences=True, recurrent_dropout=0.5)
+)(model_pipeline_masking)
+
+model_pipeline = layers.Dense(1, activation=ACTIVATION_FUNC)(model_pipeline)
+model = Model(inputs=model_pipeline_input, outputs=model_pipeline)
+
+# Compile model with loss and optimizer
+model.compile(loss=LOSS, optimizer=OPTIMIZER, metrics=METRIC_CHOICE)
+model.fit(
+    train_x_rnn,
+    train_y_rnn,
+    validation_data=(val_x_rnn, val_y_rnn),  # Error check model with validation data
+    batch_size=BATCH_SIZE,
+    epochs=EPOCHS,
+    callbacks=callbacks,
+)
+
+# Evaluate model performance on validation data
+model.evaluate(val_x_rnn, val_y_rnn)
+
+# Predict model with test data
+pred_rnn = model.predict(test_x_rnn)
+
+# inverse transofrm prediction
+pred_rnn = invTransform(
+    scalar_y, pred_rnn.ravel().reshape(-1, 1), response_var, train_df.columns
+)
+
+# Inverse transofrm test data
+test_y_ = invTransform(scalar_y, test_y, response_var, train_df.columns)
+
+# Calculate RMSE on predicted DTSM
+rmse = np.sqrt(MSE(test_y_, pred_rnn))
+print(f"RMSE from RNN model: {rmse}")
 
 
 # TEST SCRIPT
