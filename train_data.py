@@ -12,12 +12,15 @@ import joblib
 # import pickle
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+# import matplotlib.pyplot as plt
+# import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error as MSE
+from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
+from scipy.stats import randint as sp_randint
+from scipy.stats import uniform as sp_uniform
 import lightgbm as lgb
-import xgboost as xg
+# import xgboost as xg
 
 pd.set_option("max_columns", None)
 
@@ -126,24 +129,51 @@ for file in file_list:
         if len(high_missing_cols) > 0:
             df = df.dropna(axis=1, how="any")
         if len(df.columns) == len(vars_to_use):
-            # df = df[df["RESD"] > 0] #remove negative resistivities
-            # df = df[df["RESM"] > 0]
+            df = df[df["RESD"] > 0] #remove negative resistivities
+            df = df[df["RESM"] > 0]
             df[df[nonneg_vars] < 0] = 0 # remove negative values 
             # df = ut.outlier_detection(df)
-            # df = ut.convert_res_to_log(df)
+            df = ut.convert_res_to_log(df)
+            # df = ut.create_lag_features(df, "RESD", lags=res_lags, wins=res_win)
+            # df = ut.create_lag_features(df, "RESM", lags=res_lags, wins=res_win)
+            # df = ut.create_lag_features(df, "GR", lags=gr_lags, wins=gr_win)
+            # df = ut.create_lag_features(df, "NPHI", lags=nphi_lags, wins=nphi_win)
+            # df = ut.create_lag_features(df, "RHOB", lags=rhob_lags, wins=rhob_win)
+            # df = ut.create_lag_features(df, "DTCO", lags=dtco_lags, wins=dtco_win)
+            
             # df = ut.normalize_cols(df)
-            df = ut.outlier_detection(df)
-
-            df = ut.create_lag_features(df, "RESD", lags=res_lags, wins=res_win)
-            df = ut.create_lag_features(df, "RESM", lags=res_lags, wins=res_win)
-            df = ut.create_lag_features(df, "GR", lags=gr_lags, wins=gr_win)
-            df = ut.create_lag_features(df, "NPHI", lags=nphi_lags, wins=nphi_win)
-            df = ut.create_lag_features(df, "RHOB", lags=rhob_lags, wins=rhob_win)
-            df = ut.create_lag_features(df, "DTCO", lags=dtco_lags, wins=dtco_win)
+            
+            df_train, df_test = train_test_split(df, test_size = 0.2, random_state=11)
+            df_test = ut.create_lag_features(df_test, "RESD", lags=res_lags, wins=res_win)
+            df_test = ut.create_lag_features(df_test, "RESM", lags=res_lags, wins=res_win)
+            df_test = ut.create_lag_features(df_test, "GR", lags=gr_lags, wins=gr_win)
+            df_test = ut.create_lag_features(df_test, "NPHI", lags=nphi_lags, wins=nphi_win)
+            df_test = ut.create_lag_features(df_test, "RHOB", lags=rhob_lags, wins=rhob_win)
+            df_test = ut.create_lag_features(df_test, "DTCO", lags=dtco_lags, wins=dtco_win)
+            
+            df_train, df_val = train_test_split(df_train, test_size = 0.2, random_state=11)
+            
+            df_val = ut.create_lag_features(df_val, "RESD", lags=res_lags, wins=res_win)
+            df_val = ut.create_lag_features(df_val, "RESM", lags=res_lags, wins=res_win)
+            df_val = ut.create_lag_features(df_val, "GR", lags=gr_lags, wins=gr_win)
+            df_val = ut.create_lag_features(df_val, "NPHI", lags=nphi_lags, wins=nphi_win)
+            df_val = ut.create_lag_features(df_val, "RHOB", lags=rhob_lags, wins=rhob_win)
+            df_val = ut.create_lag_features(df_val, "DTCO", lags=dtco_lags, wins=dtco_win)
+            
+            df_train = ut.outlier_detection(df_train)
+            df_train = ut.create_lag_features(df_train, "RESD", lags=res_lags, wins=res_win)
+            df_train = ut.create_lag_features(df_train, "RESM", lags=res_lags, wins=res_win)
+            df_train = ut.create_lag_features(df_train, "GR", lags=gr_lags, wins=gr_win)
+            df_train = ut.create_lag_features(df_train, "NPHI", lags=nphi_lags, wins=nphi_win)
+            df_train = ut.create_lag_features(df_train, "RHOB", lags=rhob_lags, wins=rhob_win)
+            df_train = ut.create_lag_features(df_train, "DTCO", lags=dtco_lags, wins=dtco_win)
             # df = df.dropna(axis=0, how="any")
 
             print(f"Appending {file} to main df")
-            train_df = train_df.append(df)
+            # train_df = train_df.append(df)
+            train_df = train_df.append(df_train)
+            test_df = train_df.append(df_test)
+            val_df = train_df.append(df_val)
             print(train_df.shape)
      
 # sns.pairplot(train_df, vars=vars_to_use, diag_kind='kde',
@@ -165,29 +195,29 @@ train_df_norm = pd.concat([train_df_norm_x, train_df_norm_y], axis=1)
 # train_df_norm = train_df
 train_df_norm.to_pickle(df_pickle_fn_norm)
 
-# train_df_norm = pd.read_pickle(df_pickle_fn)
+# train_df_norm = pd.read_pickle(df_pickle_fn_norm)
 
 
 # XG Boost
 #Train and test data division
-x = np.asarray(train_df_norm.loc[:, train_df_norm.columns != response_var])
-y = np.asarray(train_df_norm[response_var])
+# x = np.asarray(train_df_norm.loc[:, train_df_norm.columns != response_var])
+# y = np.asarray(train_df_norm[response_var])
 
-train_x, test_x, train_y, test_y = train_test_split(
-    x, y, test_size=0.3, random_state=11
-)
+# train_x, test_x, train_y, test_y = train_test_split(
+#     x, y, test_size=0.3, random_state=11
+# )
 
-xgb_r = xg.XGBRegressor(objective="reg:squarederror", n_estimators=500)
-xgb_r.fit(train_x, train_y)
-joblib.dump(xgb_r, model_fn) 
-pred = xgb_r.predict(test_x)
+# xgb_r = xg.XGBRegressor(objective="reg:squarederror", n_estimators=500)
+# xgb_r.fit(train_x, train_y)
+# joblib.dump(xgb_r, model_fn) 
+# pred = xgb_r.predict(test_x)
 
-test_y = ut.invTransform(scalar_y, test_y, "DTSM", train_df_norm.columns)
-pred = ut.invTransform(scalar_y, pred, "DTSM", train_df_norm.columns)
+# test_y = ut.invTransform(scalar_y, test_y, "DTSM", train_df_norm.columns)
+# pred = ut.invTransform(scalar_y, pred, "DTSM", train_df_norm.columns)
 
-rmse = np.sqrt(MSE(test_y, pred))
-rmse
-xgb_r.feature_importances_
+# rmse = np.sqrt(MSE(test_y, pred))
+# rmse
+# xgb_r.feature_importances_
 
 
 
@@ -196,7 +226,6 @@ lgb_params = {
     #     'nfold': 5,
     "boosting_type": "gbdt",
     "metric": "rmse",
-    #     'objective': 'regression',
     "objective": "regression",
     #     'objective': 'tweedie',
     #     'tweedie_variance_power': 1.1,
@@ -244,8 +273,12 @@ test_data = lgb.Dataset(test_x, label=test_y)
 # m_lgb = lgb.train(lgb_params, train_data)
 m_lgb = lgb.train(lgb_params, train_data, early_stopping_rounds=10,
                   valid_sets=[train_data, val_data], verbose_eval=100)
+
+m_lgb_cv = lgb.cv(lgb_params, train_data, nfold=3, stratified=False, 
+                  early_stopping_rounds=10)
 joblib.dump(m_lgb, model_fn)
 
+pred = m_lgb_cv
 pred = m_lgb.predict(test_x, n_jobs=-1)
 
 test_y = ut.invTransform(scalar_y, test_y, "DTSM", train_df_norm.columns)
@@ -255,6 +288,54 @@ pred = ut.invTransform(scalar_y, pred, "DTSM", train_df_norm.columns)
 rmse = np.sqrt(MSE(test_y, pred))
 print(rmse)
 
+
+
+fit_params={"early_stopping_rounds":30, 
+            "eval_metric" : 'rmse', 
+            "eval_set" : val_data,
+            # 'eval_names': ['valid'],
+            #'callbacks': [lgb.reset_parameter(learning_rate=learning_rate_010_decay_power_099)],
+            'verbose': 100}
+
+param_test ={'num_leaves': sp_randint(6, 50), 
+             'min_child_samples': sp_randint(100, 500), 
+             'min_child_weight': [1e-5, 1e-3, 1e-2, 1e-1, 1, 1e1, 1e2, 1e3, 1e4],
+             'subsample': sp_uniform(loc=0.2, scale=0.8), 
+             'colsample_bytree': sp_uniform(loc=0.4, scale=0.6),
+             'reg_alpha': [0, 1e-1, 1, 2, 5, 7, 10, 50, 100],
+             'reg_lambda': [0, 1e-1, 1, 5, 10, 20, 50, 100]}
+
+n_HP_points_to_test = 100
+clf = lgb.LGBMClassifier(max_depth=-1, random_state=11, silent=True, 
+                         metric='rmse', n_jobs=-1, n_estimators=5000)
+gs = RandomizedSearchCV(
+    estimator=clf, param_distributions=param_test, 
+    n_iter=n_HP_points_to_test,
+    scoring='rmse',
+    cv=5,
+    refit=True,
+    random_state=11,
+    verbose=True)
+
+opt_parameters = {'colsample_bytree': 0.9234, 'min_child_samples': 399, 
+                  'min_child_weight': 0.1, 'num_leaves': 13, 'reg_alpha': 2, 
+                  'reg_lambda': 5, 'subsample': 0.855}
+
+clf_sw = lgb.LGBMClassifier(**clf.get_params())
+#set optimal parameters
+clf_sw.set_params(**opt_parameters)
+
+gs_sample_weight = GridSearchCV(estimator=clf_sw, 
+                                param_grid={'scale_pos_weight':[1,2,6,12]},
+                                scoring='roc_auc',
+                                cv=5,
+                                refit=True,
+                                verbose=True)
+
+gs_sample_weight.fit(train_data, **fit_params)
+
+print('Best score reached: {} with params: {} '.format(gs_sample_weight.best_score_, 
+                                                       gs_sample_weight.best_params_))
 
 # mnemonics_df.to_excel("Mnemonics_wth_file_with_stats_DTSM_length.xlsx")
 
